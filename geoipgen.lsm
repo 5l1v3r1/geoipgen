@@ -1,0 +1,11 @@
+Begin3
+Title:       geoipgen
+Version:     0.4
+Description: IPv4 network tool for generating geotargeted IP addresses. Features: Random or sorted order, unique or repeating ips, skips broadcast addresses, uses MaxMind GeoLite Country database.
+Keywords:    ip, network, ipv4, generator, scan, scanner, scanning, mapping, nmap, global, countries, world, geoip, geoipcountry, maxmind
+Author:      horton.nz at-nospam gmail.com (Andrew Horton, urbanadventurer)
+Primary-site:http://geoipgen.googlecode.com/
+Platforms:   Linux, Unices, ruby
+Copying-policy: BSD license
+End
+

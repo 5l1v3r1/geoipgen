@@ -1,0 +1,1005 @@
+#!/usr/bin/env ruby
+=begin
+Title: 			geoipgen
+Version: 		0.4
+Description: 	IPv4 network tool for generating geotargeted IP lists of countries. Features: Random or sorted order, unique or repeating ips
+Keywords: 		ip, network, ipv4, generator, scan, scanner, scanning, mapping, nmap, global, countries, world, geoip, geoipcountry, maxmind
+Author: 		horton.nz at-nospam gmail.com (Andrew Horton, urbanadventurer)
+Primary-site: 	http://www.morningstarsecurity.com/research/geoipgen
+Platforms: 		Linux, Unices, ruby
+Copying-policy: BSD license
+=end
+
+$VERSION="0.4"
+
+#require 'profile'
+
+require 'getoptlong'
+require 'set'
+
+
+class MaxMind
+# country codes --  cat GeoIPCountryWhois.csv  | cut -d , -f 5 | sort | uniq | tr '\n' ','
+# AA is for testing
+@@CC=["AA","A1","A2","AD","AE","AF","AG","AI","AL","AM","AN","AO","AP","AQ","AR","AS","AT","AU","AW","AZ","BA","BB","BD","BE","BF","BG","BH",
+"BI","BJ","BM","BN","BO","BR","BS","BT","BV","BW","BY","BZ","CA","CD","CF","CG","CH","CI","CK","CL","CM","CN","CO","CR","CU","CV","CY",
+"CZ","DE","DJ","DK","DM","DO","DZ","EC","EE","EG","ER","ES","ET","EU","FI","FJ","FK","FM","FO","FR","GA","GB","GD","GE","GF","GH","GI",
+"GL","GM","GN","GP","GQ","GR","GT","GU","GW","GY","HK","HM","HN","HR","HT","HU","ID","IE","IL","IN","IO","IQ","IR","IS","IT","JM","JO",
+"JP","KE","KG","KH","KI","KM","KN","KP","KR","KW","KY","KZ","LA","LB","LC","LI","LK","LR","LS","LT","LU","LV","LY","MA","MC","MD","ME",
+"MG","MH","MK","ML","MM","MN","MO","MP","MQ","MR","MS","MT","MU","MV","MW","MX","MY","MZ","NA","NC","NE","NF","NG","NI","NL","NO","NP",
+"NR","NU","NZ","OM","PA","PE","PF","PG","PH","PK","PL","PR","PS","PT","PW","PY","QA","RE","RO","RS","RU","RW","SA","SB","SC","SD","SE",
+"SG","SI","SK","SL","SM","SN","SO","SR","ST","SV","SY","SZ","TC","TD","TG","TH","TJ","TK","TM","TN","TO","TR","TT","TV","TW","TZ","UA",
+"UG","UM","US","UY","UZ","VA","VC","VE","VG","VI","VN","VU","WF","WS","YE","YT","ZA","ZM","ZW"]
+
+
+def MaxMind.setup(attrib=Hash.new)
+#defaults
+@@OURDIR="/etc/maxmind/"
+filename="GeoIPCountryWhois.csv"
+
+@@OURDIR=attrib[:dir] unless attrib[:dir].nil?
+filename=attrib[:db] unless attrib[:db].nil?
+
+@@MAX_MIND_CSV=MaxMind.find_maxmind_db(filename,["./",@@OURDIR,"/usr/local/share/"])
+
+if @@MAX_MIND_CSV.nil?
+	raise "Cannot find Maxmind Geo database, #{filename}.
+
+Try cutting & pasting this into your shell :
+wget http://www.maxmind.com/download/geoip/database/GeoIPCountryCSV.zip; unzip GeoIPCountryCSV.zip; mv GeoIPCountryWhois.csv /usr/local/share/ || ( mkdir $HOME/.geoipgen ; mv GeoIPCountryWhois.csv \"$HOME/.geoipgen/\")
+
+" 
+end
+
+end
+
+# check if x is a valid country code, eg. NZ, AU
+def MaxMind.valid_cc?(x)
+	@@CC.include?(x.upcase)
+end
+
+
+def MaxMind.map(countrycodes)
+	@map=IPMap.new
+	
+	# name the IPMap based on its countries
+	mapname=countrycodes.to_a.sort!.join('-')
+	mapname="ALL" if countrycodes.include?("ALL")
+
+	# if map already saved load it, otherwise make it & save it
+	if File.exists?(@@OURDIR+mapname+".map")
+		@map= IPMap.load(@@OURDIR+mapname+".map")
+	else
+		if mapname=="ALL"
+			# load all countries
+			countrycodes=@@CC
+			rules=world_rules
+			puts "adding rules to map" if VERBOSE >0
+			rules.each { |r| @map.add(r[2],r[3]) } # add rules to the map
+			@map.add_code("ALL")
+		else
+			# load selected countries
+			countrycodes.each do |cc|
+				rules=cc_rules(cc)
+				puts "adding rules to map" if VERBOSE >0
+				rules.each { |r| @map.add(r[2],r[3]) } # add rules to the map
+				@map.add_code(cc)
+			end
+		end
+	@map.save(@@OURDIR+@map.name+".map") # save it
+	end
+	@map.printmap if VERBOSE > 0
+	@map
+end
+
+
+private
+
+
+def MaxMind.cc_rules(cc)
+	rules=[]
+	puts "loading rules for #{cc}" if VERBOSE > 0
+	File.open(@@MAX_MIND_CSV).each_line do |line|
+		rules << line if line.include?("\"#{cc}\"") # regexp is slow 
+	end
+	
+	rules.collect! do |line| line.delete("\"").split(",") end
+	rules.sort! {|x,y| x[2] <=> y[2] } # sort by lower IP
+	rules
+end
+
+
+def MaxMind.world_rules
+	# loads and returns an array of IP ranges for the world
+	rules=[]
+	puts "loading rules for all countries" if VERBOSE > 0
+	File.open(@@MAX_MIND_CSV).each_line do |line|
+		row=line.delete("\"").split(",")
+		rules << row
+	end
+	rules.sort! {|x,y| x[2] <=> y[2] } # sort by lower IP
+	rules
+end
+
+def MaxMind.find_maxmind_db(filename, searchpath)
+	# returns nil or the CSV file
+	searchpath.compact.each do |pre|
+		try=pre + filename
+		raise "#{try} not readable." if File.exists?(try) and !File.readable?(try)
+		return try if File.exists?(try) and File.readable?(try)
+	end
+nil
+end
+
+end
+
+
+
+
+
+# IPgenerator.new(:target=>["NZ","AU"], :order=>"random", :limit=>"100", :unique=>true)
+# IPgenerator.new(:target=>"NZ", :order=>"asc")
+# IPgenerator.new(:target=>"4.0.0.1-4.255.255.255", :order=>"lessrandom", :unique=>false, :skip_broadcast=>true)
+# returns an IPgenerator object or nil for bad country, bad order, bad limit
+class IPGenerator
+    
+def initialize(attrib=Hash.new)
+	# defaults
+	@order="fastrandom"
+	@order=attrib[:order] unless attrib[:order].nil?
+	raise unless ["asc","random","fastrandom"].include?(@order)
+	
+	@limit=-1 # no limit by default
+	@limit=attrib[:limit] unless attrib[:limit].nil?
+	
+	@unique=false # ips can repeat, unless asc
+	@unique=attrib[:unique] unless attrib[:unique].nil?
+	raise unless [true,false].include?(@unique)
+	
+	@skip_broadcast=true # skip .0 and .255
+	@skip_broadcast=attrib[:skip_broadcast] unless attrib[:skip_broadcast].nil?
+	raise unless [true,false].include?(@skip_broadcast)
+	
+	# setup the IP Generator
+
+	# check for nonsense combinations
+	#
+	# when asc, unique is always true
+	# when random, unique is itself
+	# when fastrandom, unique is always true
+
+	# if it's a country set	
+	#	:target=>[countrycodes], :order=>order :limit=>num_to_generate)
+	if attrib[:target].class == Array
+		countrycodes = attrib[:target]
+		@map = MaxMind.map(countrycodes) # returns an IPMap
+		
+		@size = @map.counter
+	end
+	
+	# order
+	if @unique == true
+		if @order == "random"
+			@nset = Nset.new(@size)
+		end
+		if @order == "fastrandom"
+			# fast random gives only unique results
+			@unordered = Unordered2.new(@size)
+		end		
+	end
+end
+
+
+def each(&block)
+	if @order == "asc"
+		# unique = true or false becomes meaningless for ascending order
+		count=0
+		inc=0
+		while (count < @limit or @limit==-1) and inc < @map.counter
+			ip = @map.i_to_ip(inc)
+			if @skip_broadcast==false or (ip_reserved?(ip)==false and @skip_broadcast == true)
+				yield ip(ip)
+				count+=1 # count only increases when we return an IP. not when we suppress a broadcast address
+			end
+			inc+=1
+		end
+	end
+
+	# generate some random numbers then turn them into IPs
+	if @order =="random"
+		count=0
+		r=0
+		# if count increases to the limit then quit, if it's -1 it goes forever
+		# if r is nil then the nset is finished
+		while count != @limit and r!=nil
+			if @unique == true 
+			 	r=@nset.next
+ 			 	return nil if r.nil?
+			 	r-=1
+			else
+		 		r=rand(@map.counter)
+		 	end	 
+ 	 
+			addr=@map.i_to_ip(r)
+			if @skip_broadcast==false or (ip_reserved?(addr)==false and @skip_broadcast == true)
+	 	 		yield ip(addr) 
+				count+=1
+		 	end
+		 end
+	end
+	
+	if @order =="fastrandom"
+		# fast random is always unique
+		count =0 
+		@unordered.each do |n|
+				addr=@map.i_to_ip(n - 1 )
+				
+				if @skip_broadcast==false or (ip_reserved?(addr)==false and @skip_broadcast == true)
+					yield ip(addr)
+					count+=1
+				end	
+				return nil if count == @limit
+		end		
+	end
+	
+end	
+    
+    
+def save(filename)
+	begin
+		f=File.new(filename,"w")
+		f << Marshal.dump(self)
+		f.close
+	rescue
+		$stderr.puts "Save #{filename} failed: " + $!
+		raise
+	end
+end
+
+def IPGenerator.load(filename)
+	begin
+		f=File.open(filename)
+		new = Marshal.load(f)
+		f.close
+	rescue
+		$stderr.puts "Load #{filename} failed: " + $!
+		raise
+	end
+	new
+end 
+                             
+end
+
+
+
+# Map of IP addresses. This can be loaded with IP ranges from as many countries as you like
+# The map is of integers from 0 to n, so you can generate a random number and see what IP it corresponds to
+# 
+# The map looks like the following : 
+# 0 to 12623  	 = 60.234.0.0 to 60.234.49.79
+# 12624 to 16903 = 60.234.49.96 to 60.234.66.23
+# 16904 to 18087 = 60.234.66.32 to 60.234.70.191
+# 18088 to 31271 = 60.234.71.0 to 60.234.122.127
+#
+# counter is the highest integer that corresponds to a range. If the 4 rules above were a map, then counter would equal 31271
+class IPMap
+	attr_reader :counter
+	def initialize
+		@map=Array.new
+		@counter=0
+		@codes=Set.new  # the country codes that make up this ipmap
+	end
+
+	# returns a string containing the set of country code(s) this map is made of
+	# example 1 nz
+	# example 2 nz-au-jp
+	def name
+		@codes.to_a.sort!.join('-')
+	end
+
+	# adds a country code to the IPMap. This just adds the country code and doesn't load the ip rules
+	def add_code(s)
+		@codes.add(s.to_s.upcase)
+	end
+	
+	# adds an IP rule to the IPMap.
+	# eg. add this range of IPs 192.0.0.1,192.0.255.255
+	def add(startip,endip)
+		#should check start is < end
+		startip=startip.to_i
+		endip=endip.to_i
+		@map << [@counter,@counter + (endip-startip), startip,endip]
+		@counter = @counter + (endip - startip) + 1
+	end
+
+	# convert a number i between 0 and counter to an IP
+	def i_to_ip(i)
+	# binary search
+		start=0
+		stop=@map.length-1
+		while true do
+			mid=(start+stop)/2
+			# counter, counter_at_end_of_range, startip, endip
+			return (i - @map[mid][0]) + @map[mid][2]  if i >= @map[mid][0] and i <=@map[mid][1]
+			return nil if start==stop
+			if @map[mid][0] < i
+				start=mid+1
+			else
+				stop=mid-1;
+				start=stop if (stop<start)
+			end
+		end
+	end
+
+	def print_as_ips(n)
+		count=0
+		@map.each { |row|
+			for i in row[2]..row[3] do
+				puts ip(i) if ip_reserved?(i)==false
+				count+=1;return if count==n
+				end
+		}
+	end
+
+	# prints the map of numbers to their corresponding IPs
+	def printmap
+		@map.each { |row|
+			printf "%d to %d is a range of %d, translating to %d / %s to %s\n",row[0],row[1],row[1]-row[0],row[2],
+				ip(row[2].to_i),ip(row[3].to_i)
+		}
+	end
+	
+	# saves an IPMap to disk. it's filename is the list of countries the map is amde of
+	def save(filename)
+		f=File.new(filename,"w")
+		f  << Marshal.dump(self)
+		f.close
+	end
+
+	# returns an IPMap
+	def IPMap.load(filename)
+		begin
+			f=File.open(filename).read
+		rescue 
+			return nil
+		end
+		Marshal.load(f)
+	end
+end
+
+# end of IPMap
+# ---------------------------------------------------------------------------
+
+
+
+
+
+#        NAME: BitField
+#      AUTHOR: Peter Cooper
+#     LICENSE: MIT ( http://www.opensource.org/licenses/mit-license.php )
+#   COPYRIGHT: (c) 2007 Peter Cooper (http://www.petercooper.co.uk/)
+#     VERSION: v4
+#     HISTORY: v4 (fixed bug where setting 0 bits to 0 caused a set to 1)
+#              v3 (supports dynamic bitwidths for array elements.. now doing 32 bit widths default)
+#              v2 (now uses 1 << y, rather than 2 ** y .. it's 21.8 times faster!)
+#              v1 (first release)
+#
+# DESCRIPTION: Basic, pure Ruby bit field. Pretty fast (for what it is) and memory efficient.
+#              I've written a pretty intensive test suite for it and it passes great. 
+#              Works well for Bloom filters (the reason I wrote it).
+#
+#              Create a bit field 1000 bits wide
+#                bf = BitField.new(1000)
+#
+#              Setting and reading bits
+#                bf[100] = 1
+#                bf[100]    .. => 1
+#                bf[100] = 0
+#
+#              More
+#                bf.to_s = "10101000101010101"  (example)
+#                bf.total_set         .. => 10  (example - 10 bits are set to "1")
+
+class BitField
+  attr_reader :size
+  include Enumerable
+  
+  ELEMENT_WIDTH = 32
+  
+  def initialize(size)
+    @size = size
+#    @field = Array.new(((size -1 ) / ELEMENT_WIDTH) + 1, 0)
+#   above is too small for multiples of 32
+    @field = Array.new(((size ) / ELEMENT_WIDTH) + 1, 0)
+  end
+  
+  # Set a bit (1/0)
+  def []=(position, value)
+    if value == 1
+      @field[position / ELEMENT_WIDTH] |= 1 << (position % ELEMENT_WIDTH)
+    elsif (@field[position / ELEMENT_WIDTH]) & (1 << (position % ELEMENT_WIDTH)) != 0
+      @field[position / ELEMENT_WIDTH] ^= 1 << (position % ELEMENT_WIDTH)
+    end
+  end
+  
+  # Read a bit (1/0)
+  def [](position)
+    @field[position / ELEMENT_WIDTH] & 1 << (position % ELEMENT_WIDTH) > 0 ? 1 : 0
+  end
+  
+  # Iterate over each bit
+  def each(&block)
+    @size.times { |position| yield self[position] }
+  end
+  
+  # Returns the field as a string like "0101010100111100," etc.
+  def to_s
+    inject("") { |a, b| a + b.to_s }
+  end
+  
+  # Returns the total number of bits that are set
+  # (The technique used here is about 6 times faster than using each or inject direct on the bitfield)
+  def total_set
+    @field.inject(0) { |a, byte| a += byte & 1 and byte >>= 1 until byte == 0; a }
+  end
+end
+# ---------------------------------------------------------------------------------------------------
+
+
+
+# stores a bitfield and returns each element once only in a random order
+# used for IPrange :order=>random
+class Nset
+	attr_reader :count, :max
+	def initialize(m)
+		@max=m
+		@bf= BitField.new(@max)
+		@count=0
+	end
+
+	def reset
+		@count=0
+		@bf = BitField.new(@max)
+	end
+
+	def next
+		return nil if @count == @max
+		guess=((rand * @max) + 1).to_i
+		
+		while @bf[guess]==1 do				
+			guess+= 1 % @max 
+			guess = @max if guess == 0
+			guess = 1 if guess > @max
+		end
+		@bf[guess]=1
+		@count+=1		
+		guess
+	end
+
+	def each(&block)
+	    @max.times { yield self.next }
+	    self.reset
+	end
+
+	def save(filename)
+		begin
+			f=File.new(filename,"w")
+			f << Marshal.dump(self)
+			f.close
+		rescue
+			$stderr.puts "Save #{filename} failed: " + $!
+			raise
+		end
+	end
+
+	def Nset.load(filename)
+		begin
+			f=File.open(filename)
+			new_n = Marshal.load(f)
+			f.close
+		rescue
+			$stderr.puts "Load #{filename} failed: " + $!
+			raise
+		end
+		new_n
+	end
+end
+
+
+
+
+# unordered set
+class Unordered1
+def initialize(s)
+	@size=s
+	@height=@width=Math.sqrt(@size).ceil # auto make w & h
+	@y=@x=1
+end
+
+def each(&block)
+	while (@x<=@width) do
+		n = (@width * (@y - 1)) + @x
+		yield n if n<=@size
+		@y+=1
+		if @y>@height
+			@y=1
+			@x+=1
+		end
+	end
+end
+end
+
+
+
+
+
+# unordered set
+# can produce uniq IPs in a seemingly random order
+class Unordered2
+def initialize(s)
+	@size=s
+	if @size > 1000
+		# a nice and wide grid
+		@height=1000
+		@width=@size/@height + 1
+	else
+		@height=@width=Math.sqrt(@size).ceil # auto make w & h
+	end
+	@y=@x=1
+
+	# column_width cannot be larger than width
+	@column_width= Math.sqrt(@width).ceil
+
+	@current_column=1
+	@column_x=1
+	@num_columns = (@width / @column_width.to_f).ceil
+
+	@x_order=[] ; Nset.new(@column_width).each {|x| @x_order << x}
+
+	# randomly mix up the y order
+	@y_order=[]
+	Nset.new(@height).each {|x| @y_order << x }
+
+end
+
+def each(&block)
+	while (@column_x<=@column_width) do
+		n=self.next
+		yield n if n<=@size
+	end
+end
+
+def next
+	#puts "col_x = #{@column_x}"
+	@x =(@x_order[@column_x-1] + (@column_width * (@current_column-1) )) 
+	n = @x + ((@y_order[@y-1]-1) * @width)
+	#puts "#{@current_column},#{@column_x},#{@y},#{@x},#{@y_order[@y-1]}\t\t#{n}"
+
+	@y+=1
+	if @y > @height
+		#puts "past height"
+		@current_column+=1
+		@y=1
+		if (@current_column == @num_columns)
+	#		puts "last column"
+			if (@x_order[@column_x-1] + (@column_width * (@current_column-1) )) > @width
+				#puts "back to 1"
+				@current_column+=1
+			end
+		end
+		if @current_column > @num_columns
+	#		puts "current column > num_columns"
+			@current_column=1
+			@column_x +=1
+			@y=1
+		end
+	end
+	n
+end
+end
+
+
+
+# -----------------------
+
+
+
+# Convert an IP from 3278942444 to 195.112.176.236
+def ip(addr)
+# taken from IPAddr _to_string. This is faster than using ipaddr objects + extending the class's initialize
+ s=(0..3).map { |i|
+        (addr >> (24 - 8 * i)) & 0xff
+ }.join('.')
+ return s
+end
+
+# return true if addr%256 ==0 or addr%256 == 255
+def ip_reserved?(addr)
+	return true if addr%256 ==0 or addr%256 == 255
+	false
+end
+
+
+def usage
+puts "Usage: #{$0} [OPTION]... [COUNTRYCODE]...
+Version #{$VERSION} by Andrew Horton aka urbanadventurer, MorningStar Security
+Homepage: http://www.morningstarsecurity.com/research/geoipgen
+
+GeoIPgen is a country-to-IPs generator. It's a geographic IP generator for IPv4
+networks that uses the MaxMind GeoLite Country database.
+Features: Random or sorted order, unique or repeating IPs, skips
+broadcast addresses, one, many or all countries.
+
+Target:
+ COUNTRYCODE\tOne or more country codes, delimited by spaces
+ \t\tUse 'all' to target all country codes. Use -l to see a list.
+ -n NUM\t\tExits after NUM IPs
+
+Unique or repeating:
+ -u, --unique\tReturn each IP in the countries once only (default)
+ --repeat\tIPs can repeat with random order
+
+Order:
+ -s, --sorted\tOrder is sorted, ascending
+ --random\tOrder is random (default)
+ 
+ Other:
+ -h, --help\tThis message
+ -l, --list-countries  List countries and their country codes
+ -c DIRECTORY\tLocation of GeoIPCountryWhois.csv database
+ \t\tDefault locations: #{$MAX_MIND_DIRS.join(", ")}
+ -V, --version\tPrint version information. This version is #{$VERSION}
+
+Example Usage:
+
+How to generate random IPs for the whole world, enumerating each IP once only.
+	$ geoipgen all
+
+Find out how many IPs are allocated to Israel
+	$ geoipgen --sorted il | wc -l
+
+How to generate all IPs for New Zealand
+	$ geoipgen nz
+
+How to generate all IPs for New Zealand and Australia
+	$ geoipgen nz au
+
+How to generate 10000 IPs in Far East Asia
+	$ geoipgen -n 10000 cn hk mn tw mo jp kr kp
+
+How to continually generate IPs for the United States, with repeats
+	$ geoipgen --repeat us
+
+"
+end
+
+def list_countries
+puts "A1      Anonymous Proxy
+A2      Satellite Provider
+AD      Andorra
+AE      United Arab Emirates
+AF      Afghanistan
+AG      Antigua and Barbuda
+AI      Anguilla
+AL      Albania
+AM      Armenia
+AN      Netherlands Antilles
+AO      Angola
+AP      Asia/Pacific Region
+AQ      Antarctica
+AR      Argentina
+AS      American Samoa
+AT      Austria
+AU      Australia
+AW      Aruba
+AX      Aland Islands
+AZ      Azerbaijan
+BA      Bosnia and Herzegovina
+BB      Barbados
+BD      Bangladesh
+BE      Belgium
+BF      Burkina Faso
+BG      Bulgaria
+BH      Bahrain
+BI      Burundi
+BJ      Benin
+BM      Bermuda
+BN      Brunei Darussalam
+BO      Bolivia
+BR      Brazil
+BS      Bahamas
+BT      Bhutan
+BV      Bouvet Island
+BW      Botswana
+BY      Belarus
+BZ      Belize
+CA      Canada
+CD      Congo, The Democratic Republic of the
+CF      Central African Republic
+CG      Congo
+CH      Switzerland
+CI      Cote D'Ivoire
+CK      Cook Islands
+CL      Chile
+CM      Cameroon
+CN      China
+CO      Colombia
+CR      Costa Rica
+CU      Cuba
+CV      Cape Verde
+CY      Cyprus
+CZ      Czech Republic
+DE      Germany
+DJ      Djibouti
+DK      Denmark
+DM      Dominica
+DO      Dominican Republic
+DZ      Algeria
+EC      Ecuador
+EE      Estonia
+EG      Egypt
+ER      Eritrea
+ES      Spain
+ET      Ethiopia
+EU      Europe
+FI      Finland
+FJ      Fiji
+FK      Falkland Islands (Malvinas)
+FM      Micronesia, Federated States of
+FO      Faroe Islands
+FR      France
+GA      Gabon
+GB      United Kingdom
+GD      Grenada
+GE      Georgia
+GF      French Guiana
+GG      Guernsey
+GH      Ghana
+GI      Gibraltar
+GL      Greenland
+GM      Gambia
+GN      Guinea
+GP      Guadeloupe
+GQ      Equatorial Guinea
+GR      Greece
+GT      Guatemala
+GU      Guam
+GW      Guinea-Bissau
+GY      Guyana
+HK      Hong Kong
+HM      Heard Island and McDonald Islands
+HN      Honduras
+HR      Croatia
+HT      Haiti
+HU      Hungary
+ID      Indonesia
+IE      Ireland
+IL      Israel
+IM      Isle of Man
+IN      India
+IO      British Indian Ocean Territory
+IQ      Iraq
+IR      Iran, Islamic Republic of
+IS      Iceland
+IT      Italy
+JE      Jersey
+JM      Jamaica
+JO      Jordan
+JP      Japan
+KE      Kenya
+KG      Kyrgyzstan
+KH      Cambodia
+KI      Kiribati
+KM      Comoros
+KN      Saint Kitts and Nevis
+KP      Korea, Democratic People's Republic of
+KR      Korea, Republic of
+KW      Kuwait
+KY      Cayman Islands
+KZ      Kazakstan
+LA      Lao People's Democratic Republic
+LB      Lebanon
+LC      Saint Lucia
+LI      Liechtenstein
+LK      Sri Lanka
+LR      Liberia
+LS      Lesotho
+LT      Lithuania
+LU      Luxembourg
+LV      Latvia
+LY      Libyan Arab Jamahiriya
+MA      Morocco
+MC      Monaco
+MD      Moldova, Republic of
+ME      Montenegro
+MG      Madagascar
+MH      Marshall Islands
+MK      Macedonia
+ML      Mali
+MM      Myanmar
+MN      Mongolia
+MO      Macau
+MP      Northern Mariana Islands
+MQ      Martinique
+MR      Mauritania
+MS      Montserrat
+MT      Malta
+MU      Mauritius
+MV      Maldives
+MW      Malawi
+MX      Mexico
+MY      Malaysia
+MZ      Mozambique
+NA      Namibia
+NC      New Caledonia
+NE      Niger
+NF      Norfolk Island
+NG      Nigeria
+NI      Nicaragua
+NL      Netherlands
+NO      Norway
+NP      Nepal
+NR      Nauru
+NU      Niue
+NZ      New Zealand
+OM      Oman
+PA      Panama
+PE      Peru
+PF      French Polynesia
+PG      Papua New Guinea
+PH      Philippines
+PK      Pakistan
+PL      Poland
+PM      Saint Pierre and Miquelon
+PR      Puerto Rico
+PS      Palestinian Territory, Occupied
+PT      Portugal
+PW      Palau
+PY      Paraguay
+QA      Qatar
+RE      Reunion
+RO      Romania
+RS      Serbia
+RU      Russian Federation
+RW      Rwanda
+SA      Saudi Arabia
+SB      Solomon Islands
+SC      Seychelles
+SD      Sudan
+SE      Sweden
+SG      Singapore
+SI      Slovenia
+SK      Slovakia
+SL      Sierra Leone
+SM      San Marino
+SN      Senegal
+SO      Somalia
+SR      Suriname
+ST      Sao Tome and Principe
+SV      El Salvador
+SY      Syrian Arab Republic
+SZ      Swaziland
+TC      Turks and Caicos Islands
+TD      Chad
+TG      Togo
+TH      Thailand
+TJ      Tajikistan
+TK      Tokelau
+TM      Turkmenistan
+TN      Tunisia
+TO      Tonga
+TR      Turkey
+TT      Trinidad and Tobago
+TV      Tuvalu
+TW      Taiwan
+TZ      Tanzania, United Republic of
+UA      Ukraine
+UG      Uganda
+UM      United States Minor Outlying Islands
+US      United States
+UY      Uruguay
+UZ      Uzbekistan
+VA      Holy See (Vatican City State)
+VC      Saint Vincent and the Grenadines
+VE      Venezuela
+VG      Virgin Islands, British
+VI      Virgin Islands, U.S.
+VN      Vietnam
+VU      Vanuatu
+WF      Wallis and Futuna
+WS      Samoa
+YE      Yemen
+YT      Mayotte
+ZA      South Africa
+ZM      Zambia
+ZW      Zimbabwe
+"
+
+end
+
+
+
+# ------------------------------------------------------------------------------------------
+
+
+# defaults and globals
+VERBOSE=0
+
+# $OURDIR is a global so it can be seen in usage()
+$OURDIR=ENV["HOME"]+"/.geoipgen/"
+$MAX_MIND_DIRS=["./",$OURDIR,"/usr/local/share/"]
+
+limit=-1 # -1 is infinite
+order=""
+unique=true
+
+
+ opts = GetoptLong.new(
+      [ '--help', '-h', GetoptLong::NO_ARGUMENT ],
+      [ '-n', GetoptLong::REQUIRED_ARGUMENT ],
+      [ '--sorted','-s', GetoptLong::NO_ARGUMENT ],
+      [ '--unique','-u', GetoptLong::NO_ARGUMENT ],
+      [ '--repeat', GetoptLong::NO_ARGUMENT ],
+      [ '--random','-r', GetoptLong::NO_ARGUMENT ],
+      [ '--list-countries','-l', GetoptLong::NO_ARGUMENT ],
+      [ '-c', GetoptLong::REQUIRED_ARGUMENT ],
+      [ '-V','--version', GetoptLong::NO_ARGUMENT ]
+    )
+ opts.each do |opt, arg|
+    case opt
+	when '--help'
+		usage
+		exit
+	when '-l','--list-countries'
+		list_countries
+		exit
+	when '--sorted','-s'
+		order="asc"
+    when '--random','-r'
+        order="fastrandom"
+    when '--unique','-u'
+        unique=true
+    when '--random'
+        unique=false        
+	when '-n'
+		limit=arg.to_i
+	when '-c'
+		$MAX_MIND_DIRS << arg.to_s+"/" if File.directory?(arg.to_s+"/")
+	when '-V','--version'
+		puts $VERSION; exit
+    end
+ end
+
+if ARGV.length < 1
+	usage
+	exit
+end
+
+
+countrycodes = Array.new
+ARGV.each do |x|
+	countrycodes << x.upcase if MaxMind.valid_cc?(x) or x.upcase=="ALL"	
+end
+
+order="fastrandom" if order=="" 
+
+raise "Must select at least one valid country code." if countrycodes.length == 0
+raise "order unknown" unless ["asc","fastrandom"].include?(order)
+
+# make our geoipgen folder if it doesn't exist
+Dir.mkdir($OURDIR) if !File.directory?($OURDIR)
+
+# check we can write to our folder
+raise "Cannot write to #{$OURDIR}" unless File.writable?($OURDIR)
+
+# setup maxmind for country info
+MaxMind.setup({:dir=>$OURDIR,:db=>"GeoIPCountryWhois.csv" })
+
+# IPgenerator.new(:target=>["NZ","AU"], :order=>"random", :limit=>"100", :unique=>true)
+# IPgenerator.new(:target=>"NZ", :order=>"asc")
+# IPgenerator.new(:target=>"4.0.0.1-4.255.255.255", :order=>"fastrandom", :unique=>false, :skip_broadcast=>true, :cache=>true)
+
+generator=IPGenerator.new(:target=>countrycodes, :order=>order, :limit=>limit, :unique=>unique)
+generator.each {|ip| puts ip }
+
+

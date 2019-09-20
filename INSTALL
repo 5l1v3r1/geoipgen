@@ -1,0 +1,30 @@
+INSTALL THE MAXMIND DATABASE
+
+Download the file GeoIPCountryCSV.zip from www.maxmind.com. Extract GeoIPCountryWhois.csv
+and put into a location in geoipgen's search path.
+
+Copy and paste the following commands into your shell:
+
+	wget http://www.maxmind.com/download/geoip/database/GeoIPCountryCSV.zip
+	unzip GeoIPCountryCSV.zip
+	mv GeoIPCountryWhois.csv /usr/local/share/ || ( mkdir $HOME/.geoipgen ; mv GeoIPCountryWhois.csv "$HOME/.geoipgen/")
+
+
+FOR UNINSTALLED USE
+
+Put GeoIPCountryWhois.csv in the same directory as geoipgen
+
+
+INSTALLING GEOIPGEN
+
+For system wide use copy geoipgen to /usr/local/bin
+Per user installation, copy to ~/bin
+
+
+DEPENDS
+
+Depends on ruby. To install under Ubuntu / Debian try:
+	$ sudo apt-get install ruby
+
+
+

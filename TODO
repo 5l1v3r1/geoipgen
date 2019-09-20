@@ -1,0 +1,37 @@
+TO DO & IDEAS
+
+[X] use less-random by default. rename to fast-random.cd
+[x] Add changelog
+
+Rdoc
+
+Add save & resume. So i can scn 1000, do somthing, repeat, etc.
+Catch ^C and save in current directory
+
+bundle with script to resolve with whatever resolvers are on the box.
+adns, apache log resovler, etc.
+
+optionally log each usage with a HTTP GET /track/geoipgen?cmdline=&uname=
+
+Output information about the target country. Number of ip addresses, etc.
+
+Generate IP ranges, random, or ordered and with an offset
+
+Check if usage -c is the whole file or just DIR
+
+no writing files option, useful when without a writable home dir. slower start up times
+
+detect when writable homedir not available and use 'no writing files' option. eg. www-data user can't write to it's homedir
+
+Output all but specified countries -- need two maps, take adding to map out of loading country. produce from world map, 
+suppress intersection with cc map
+
+Maybe use ip lists as sets - intersect, union, subtraction
+ 
+User defined sets - either defined by line or by file. example input
+files can be any line with 2 ip's where 1 is lwoer than the next
+
+Make win32 EXE version
+
+separate IP generator library
+

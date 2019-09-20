@@ -1,0 +1,113 @@
+GeoIPgen - Country-to-IPs generator. Geographic IP generator for IPv4 networks.
+By Andrew Horton aka urbanadventurer, MorningStar Security
+Version : 0.3, 1st December 2009
+Homepage: http://www.morningstarsecurity.com/research/geoipgen
+License: BSD
+
+
+INTRODUCTION
+GeoIPgen is a country-to-IPs generator. It's a geographic IP generator for IPv4 networks that uses the MaxMind GeoLite Country database. Geoipgen is the first published use of a geographic ip database in reverse to translate from country-to-IPs instead of the usual use of IP-to-country.
+
+
+INSTALLATION
+See the INSTALL file
+
+VIDEO TUTORIAL
+Vivek Ramachandran from www.securitytube.net has made an excellent video tutorial for geoipgen titled Geo Targeting Cyber Attacks using IP Addresses. http://www.securitytube.net/Geo-Targeting-Cyber-Attacks-using-IP-Addresses-video.aspx
+
+USAGE
+Usage: ./geoipgen [OPTION]... [COUNTRYCODE]...
+Version 0.4 by Andrew Horton aka urbanadventurer, MorningStar Security
+Homepage: http://www.morningstarsecurity.com/research/geoipgen
+
+GeoIPgen is a country-to-IPs generator. It's a geographic IP generator for IPv4
+networks that uses the MaxMind GeoLite Country database.
+Features: Random or sorted order, unique or repeating IPs, skips
+broadcast addresses, one, many or all countries.
+
+Target:
+ COUNTRYCODE	One or more country codes, delimited by spaces
+ 		       	Use 'all' to target all country codes. Use -l to see a list.
+ -n NUM			Exits after NUM IPs have been generated
+
+Unique or repeating:
+ -u, --unique	Return each IP in the countries once only (default)
+ --repeat		IPs can repeat with random order
+
+Order:
+ -s, --sorted	Order is sorted, ascending
+ --random		Order is random (default)
+
+Other:
+ -h, --help		This message
+ -l, --list-countries  List countries and their country codes
+ -c DIRECTORY	Location of GeoIPCountryWhois.csv database
+ 				Default locations: ./, /home/user/.geoipgen/, /usr/local/share/
+ -V, --version	Print version information. This version is 0.4
+
+Example Usage:
+
+How to generate random IPs for the whole world, enumerating each IP once only.
+	$ geoipgen all
+
+Find out how many IPs are allocated to Israel
+	$ geoipgen --sorted il | wc -l
+
+How to generate all IPs for New Zealand
+	$ geoipgen nz
+
+How to generate all IPs for New Zealand and Australia
+	$ geoipgen nz au
+
+How to generate 10000 IPs in Far East Asia
+	$ geoipgen -n 10000 cn hk mn tw mo jp kr kp
+
+How to continually generate IPs for the United States, with repeats
+	$ geoipgen --repeat us
+
+
+
+HOW TO REVERSE RESOLVE A COUNTRY
+This can aid in testing the accuracy of the MaxMind location data by finding
+ip blocks potentially attributed to the wrong country.
+For example, an ip block could be attributed to New Zealand by Maxmind but when
+each IP is resolved is found to have many hostnames ending in .sk indicates the
+ip block belongs to Slovakia and MaxMind has misattributed the location data.
+
+
+For fast DNS resolution, use an asynchronous resolver like adns.
+
+How to install GNU adns
+	Download and follow instructions from http://www.chiark.greenend.org.uk/~ian/adns/
+	or
+	$ sudo apt-get install libadns1-bin
+
+Pipe IPs to adnsresfilter and only output resolved IPs 
+	$ ./geoipgen  nz | adnsresfilter -w -a | egrep "\[.*\]"  
+
+Example Output
+	125-238-151-47.broadband-telecom.global-gateway.net.nz[125.238.151.47]
+	161-65-114-241.ip.fx.net.nz[161.65.114.241]
+	c0.d0.33.static.xlhost.com[209.51.208.192]
+	203-114-177-78.dsl.sta.inspire.net.nz[203.114.177.78]
+	ds7a04.cc.waikato.ac.nz[130.217.64.150]
+
+
+
+PERFORMANCE
+Geoipgen uses an algorithm to traverse the IP map returning each IP once only. This algorithm uses some randomness so the pattern should never repeat. This is a much more efficient and faster method than using a bitfield to track whether an IP has been returned.
+
+The first time you generate a set of countries, the countrycode map files are created and saved in ~/.geoipgen/. Subsequent uses are faster because they reload the saved countrycode map.
+
+
+
+RELATED INFO
+Homepage of the MaxMind GeoLite database http://www.maxmind.com/app/geoip_country
+There is an alternative geoIP database here http://software77.net/cgi-bin/ip-country/geo-ip.pl
+
+
+CREDITS
+
+Geoipgen is authored by Andrew Horton (urbanadventurer) andrew [at] morningstarsecurity.com. 
+Thanks to MaxMind for making their GeoLite Country database freely available.
+

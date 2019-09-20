@@ -1,0 +1,9 @@
+Version 0.4, 7th March, 2010
+* Faster and smaller memory usage. It now uses the fast-random algorithm by default instead of the bit-field method
+* Re-wrote README file
+* Simplified usage instructions
+
+Version 0.3, 1st December, 2009
+Version 0.2b, 1st October, 2008
+
+
